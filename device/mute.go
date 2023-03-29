@@ -6,18 +6,94 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/byuoitav/common/status"
 	"github.com/byuoitav/connpool"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
-func (dm *DeviceManager) HandlerMute(ctx *gin.Context) {}
+func (dm *DeviceManager) HandlerMute(ctx *gin.Context) {
+	addr := ctx.Param("address")
+	name := ctx.Param("name")
+	name += "Mute"
+	dsp := dm.CreateDSP(addr)
 
-func (dm *DeviceManager) HandlerUnMute(ctx *gin.Context) {}
+	dm.Log.Debug("setting mute to true", zap.String("address", addr), zap.String("name", name))
 
-func (dm *DeviceManager) HandlerMuteStatus(ctx *gin.Context) {}
+	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	err := dsp.SetMute(c, name, true)
+	if err != nil {
+		dm.Log.Error("unable to mute", zap.String("address", addr), zap.Error(err))
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+	dm.Log.Debug("mute set", zap.String("address", addr), zap.String("name", name))
+
+	ctx.JSON(http.StatusOK, status.Mute{
+		Muted: true,
+	})
+}
+
+func (dm *DeviceManager) HandlerUnMute(ctx *gin.Context) {
+	addr := ctx.Param("address")
+	name := ctx.Param("name")
+	name += "Mute"
+	dsp := dm.CreateDSP(addr)
+
+	dm.Log.Debug("setting mute to false", zap.String("address", addr), zap.String("name", name))
+
+	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	err := dsp.SetMute(c, name, false)
+	if err != nil {
+		dm.Log.Error("unable to unmute", zap.String("address", addr), zap.Error(err))
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+	dm.Log.Debug("mute set", zap.String("address", addr), zap.String("name", name))
+
+	ctx.JSON(http.StatusOK, status.Mute{
+		Muted: false,
+	})
+}
+
+func (dm *DeviceManager) HandlerMuteStatus(ctx *gin.Context) {
+	addr := ctx.Param("address")
+	name := ctx.Param("name")
+	name += "Mute"
+	dsp := dm.CreateDSP(addr)
+
+	dm.Log.Debug("getting mutes", zap.String("address", addr))
+
+	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	mutes, err := dsp.Mutes(c, []string{name})
+	if err != nil {
+		dm.Log.Error("unable to get mutes: %s", zap.String("address", addr), zap.Error(err))
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	dm.Log.Debug("Got mutes", zap.String("address", addr), zap.String("mutes", fmt.Sprintf("%+v", mutes)))
+
+	mute, ok := mutes[name]
+	if !ok {
+		dm.Log.Error("invalid name requested", zap.String("address", addr), zap.String("name", name))
+		ctx.String(http.StatusBadRequest, "invalid name")
+		return
+	}
+
+	ctx.JSON(http.StatusOK, status.Mute{
+		Muted: mute,
+	})
+}
 
 func (d *DSP) Mutes(ctx context.Context, blocks []string) (map[string]bool, error) {
 	toReturn := make(map[string]bool)

@@ -7,22 +7,77 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/byuoitav/common/status"
 	"github.com/byuoitav/connpool"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
 func (dm *DeviceManager) HandlerGetVolume(ctx *gin.Context) {
-	// addr := ctx.Param("address")
-	// name := ctx.Param("name")
-	// name += "Gain"
-	// dm.Log.Debug("getting volumes", zap.String("name", name))
+	addr := ctx.Param("address")
+	name := ctx.Param("name")
+	name += "Gain"
+	dsp := dm.CreateDSP(addr)
 
+	dm.Log.Debug("getting volumes", zap.String("address", addr))
+
+	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	vols, err := dsp.Volumes(c, []string{name})
+	if err != nil {
+		dm.Log.Error("unable to get volumes", zap.Error(err))
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	dm.Log.Debug("Got volumes", zap.String("address", addr), zap.String("volumes", fmt.Sprintf("%+v", vols)))
+
+	vol, ok := vols[name]
+	if !ok {
+		dm.Log.Error("invalid name requested", zap.String("name", name))
+		ctx.String(http.StatusBadRequest, "invalid name")
+		return
+	}
+
+	ctx.JSON(http.StatusOK, status.Volume{
+		Volume: vol,
+	})
 }
 
-func (dm *DeviceManager) HandlerSetVolume(ctx *gin.Context) {}
+func (dm *DeviceManager) HandlerSetVolume(ctx *gin.Context) {
+	addr := ctx.Param("address")
+	name := ctx.Param("name")
+	name += "Gain"
+	dsp := dm.CreateDSP(addr)
+
+	vol, err := strconv.Atoi(ctx.Param("volume"))
+	if err != nil {
+		ctx.String(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	dm.Log.Debug("setting volume", zap.String("name", name), zap.Int("volume", vol))
+
+	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	err = dsp.SetVolume(c, name, vol)
+	if err != nil {
+		dm.Log.Error("unable to set volume", zap.Error(err))
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	dm.Log.Debug("Set volume", zap.String("address", addr))
+	ctx.JSON(http.StatusOK, status.Volume{
+		Volume: vol,
+	})
+}
 
 func (d *DSP) Volumes(ctx context.Context, blocks []string) (map[string]int, error) {
 	toReturn := make(map[string]int)

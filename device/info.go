@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"time"
 
@@ -14,7 +15,28 @@ import (
 	"go.uber.org/zap"
 )
 
-func (dm *DeviceManager) HandlerGetInfo(ctx *gin.Context) {}
+func (dm *DeviceManager) HandlerGetInfo(ctx *gin.Context) {
+	addr := ctx.Param("address")
+	dsp := dm.CreateDSP(addr)
+
+	dm.Log.Debug("getting qsc hardware info", zap.String("address", addr))
+
+	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	info, err := dsp.Info(c)
+	if err != nil {
+		dm.Log.Error("unable to get hardware info", zap.String("address", addr), zap.Error(err))
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	dm.Log.Debug("Got hardware info", zap.String("address", addr), zap.String("info", fmt.Sprintf("%+v", info)))
+
+	ctx.JSON(http.StatusOK, map[string]interface{}{
+		"Info": info,
+	})
+}
 
 type Info struct {
 	Hostname   string

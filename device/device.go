@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/byuoitav/connpool"
@@ -14,29 +15,41 @@ import (
 )
 
 type DeviceManager struct {
-	Log *zap.Logger
+	Log     *zap.Logger
+	dspList *sync.Map
 }
 
-func (d *DeviceManager) RunHTTPServer(router *gin.Engine, port string) error {
-	d.Log.Info("registering http endpoints")
+func (dm *DeviceManager) RunHTTPServer(router *gin.Engine, port string) error {
+	dm.Log.Info("registering http endpoints")
 
 	dev := router.Group("")
-	dev.GET("/:address/:name/volume/mute", d.HandlerMute)
-	dev.GET("/:address/:name/volume/unmute", d.HandlerUnMute)
-	dev.GET("/:address/:name/mute/status", d.HandlerMuteStatus)
-	dev.GET("/:address/:name/volume/set/:level", d.HandlerSetVolume)
-	dev.GET("/:address/:name/volume/level", d.HandlerGetVolume)
-	dev.PUT("/:address/generic/:name/:value", d.HandlerSetGeneric)
-	dev.GET("/:address/generic/:name", d.HandlerGetGeneric)
-	dev.GET("/:address/hardware", d.HandlerGetInfo)
+	dev.GET("/:address/:name/volume/mute", dm.HandlerMute)
+	dev.GET("/:address/:name/volume/unmute", dm.HandlerUnMute)
+	dev.GET("/:address/:name/mute/status", dm.HandlerMuteStatus)
+	dev.GET("/:address/:name/volume/set/:level", dm.HandlerSetVolume)
+	dev.GET("/:address/:name/volume/level", dm.HandlerGetVolume)
+	dev.PUT("/:address/generic/:name/:value", dm.HandlerSetGeneric)
+	dev.GET("/:address/generic/:name", dm.HandlerGetGeneric)
+	dev.GET("/:address/hardware", dm.HandlerGetInfo)
 
 	server := &http.Server{
 		Addr:           port,
 		MaxHeaderBytes: 1024 * 10,
 	}
 
-	d.Log.Info("running http server", zap.String("port", port))
+	dm.Log.Info("running http server", zap.String("port", port))
 	return router.Run(server.Addr)
+}
+
+func (dm *DeviceManager) CreateDSP(addr string) *DSP {
+	if dsp, ok := dm.dspList.Load(addr); ok {
+		return dsp.(*DSP)
+	}
+
+	dsp := newDSP(addr)
+
+	dm.dspList.Store(addr, dsp)
+	return dsp
 }
 
 type DSP struct {
@@ -46,7 +59,7 @@ type DSP struct {
 
 const _kTimeoutInSeconds = 2.0
 
-func New(addr string, opts ...Option) *DSP {
+func newDSP(addr string, opts ...Option) *DSP {
 	options := options{
 		ttl:    30 * time.Second,
 		delay:  500 * time.Millisecond,

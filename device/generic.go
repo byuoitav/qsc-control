@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/byuoitav/connpool"
@@ -12,9 +14,57 @@ import (
 	"go.uber.org/zap"
 )
 
-func (dm *DeviceManager) HandlerGetGeneric(ctx *gin.Context) {}
+func (dm *DeviceManager) HandlerGetGeneric(ctx *gin.Context) {
+	addr := ctx.Param("address")
+	name := ctx.Param("name")
 
-func (dm *DeviceManager) HandlerSetGeneric(ctx *gin.Context) {}
+	dsp := dm.CreateDSP(addr)
+	dm.Log.Debug("getting control value", zap.String("address", addr), zap.String("name", name))
+
+	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	val, err := dsp.Control(c, name)
+	if err != nil {
+		dm.Log.Error("unable to get control", zap.Error(err))
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	dm.Log.Debug("Got control", zap.String("address", addr), zap.String("value", fmt.Sprintf("%+v", val)))
+	ctx.JSON(http.StatusOK, map[string]float64{
+		name: val,
+	})
+}
+
+func (dm *DeviceManager) HandlerSetGeneric(ctx *gin.Context) {
+	addr := ctx.Param("address")
+	name := ctx.Param("name")
+	val, err := strconv.ParseFloat(ctx.Param("value"), 64)
+	if err != nil {
+		ctx.String(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	dsp := dm.CreateDSP(addr)
+
+	dm.Log.Debug("setting control value", zap.String("address", addr), zap.String("name", name), zap.Float64("value", val))
+
+	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	err = dsp.SetControl(c, name, val)
+	if err != nil {
+		dm.Log.Error("unable to set control", zap.Error(err))
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	dm.Log.Debug("Set control", zap.String("address", addr))
+	ctx.JSON(http.StatusOK, map[string]float64{
+		name: val,
+	})
+}
 
 func (d *DSP) SetControl(ctx context.Context, name string, value float64) error {
 	req := d.GetGenericSetStatusRequest(ctx)
