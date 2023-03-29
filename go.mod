@@ -1,4 +1,4 @@
-module qsc-control
+module github.com/byuoitav/qsc-control
 
 go 1.20
 

@@ -2,7 +2,8 @@ package main
 
 import (
 	"net/http"
-	"qsc-control/device"
+
+	"github.com/byuoitav/qsc-control/device"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/pflag"
