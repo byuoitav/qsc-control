@@ -7,14 +7,16 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-func buildLogger(lvl string) *zap.Logger {
-	var level zapcore.Level
-	if err := level.Set(lvl); err != nil {
-		panic(fmt.Sprintf("invalid log level: %s", err))
+func buildLogger(lvl string) (*zap.Logger, *zap.AtomicLevel) {
+	level, err := getZapLevelFromString(lvl)
+	if err != nil {
+		panic(fmt.Sprintf("cannot build logger: %s", err))
 	}
 
+	atom := zap.NewAtomicLevelAt(level)
+
 	config := zap.Config{
-		Level: zap.NewAtomicLevelAt(level),
+		Level: atom,
 		Sampling: &zap.SamplingConfig{
 			Initial:    100,
 			Thereafter: 100,
@@ -42,5 +44,14 @@ func buildLogger(lvl string) *zap.Logger {
 		panic(fmt.Sprintf("unable to build logger: %s", err))
 	}
 
-	return log
+	return log, &atom
+}
+
+func getZapLevelFromString(lvl string) (zapcore.Level, error) {
+	var level zapcore.Level
+	if err := level.Set(lvl); err != nil {
+		return level, fmt.Errorf("invalid log level: %s", err)
+	}
+
+	return level, nil
 }

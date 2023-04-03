@@ -17,8 +17,10 @@ func main() {
 
 	port = ":" + port
 
+	log, logLvl := buildLogger(logLevel)
 	manager := device.DeviceManager{
-		Log: buildLogger(logLevel),
+		Log:      log,
+		LogLevel: logLvl,
 	}
 
 	router := gin.Default()
@@ -28,8 +30,23 @@ func main() {
 	})
 
 	router.GET("/status")
-	router.PUT("/log-level/:level")
-	router.GET("/log-level")
+
+	router.PUT("/log-level/:level", func(ctx *gin.Context) {
+		lvl := ctx.Param("level")
+
+		level, err := getZapLevelFromString(lvl)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, "invalid log level")
+			return
+		}
+
+		manager.LogLevel.SetLevel(level)
+		ctx.String(http.StatusOK, lvl)
+	})
+
+	router.GET("/log-level", func(ctx *gin.Context) {
+		ctx.String(http.StatusOK, manager.Log.Level().String())
+	})
 
 	err := manager.RunHTTPServer(router, port)
 	if err != nil {

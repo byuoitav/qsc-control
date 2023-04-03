@@ -15,8 +15,9 @@ import (
 )
 
 type DeviceManager struct {
-	Log     *zap.Logger
-	dspList *sync.Map
+	Log      *zap.Logger
+	LogLevel *zap.AtomicLevel
+	dspList  *sync.Map
 }
 
 func (dm *DeviceManager) RunHTTPServer(router *gin.Engine, port string) error {
