@@ -5,6 +5,7 @@ go 1.20
 require (
 	github.com/byuoitav/common v0.0.0-20230217215806-8472d0ddbfb3
 	github.com/byuoitav/connpool v0.4.1
+	github.com/gin-contrib/cors v1.4.0
 	github.com/gin-gonic/gin v1.9.0
 	github.com/spf13/pflag v1.0.5
 	go.uber.org/zap v1.24.0

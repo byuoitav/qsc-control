@@ -17,7 +17,7 @@ import (
 type DeviceManager struct {
 	Log      *zap.Logger
 	LogLevel *zap.AtomicLevel
-	dspList  *sync.Map
+	DspList  *sync.Map
 }
 
 func (dm *DeviceManager) RunHTTPServer(router *gin.Engine, port string) error {
@@ -43,13 +43,13 @@ func (dm *DeviceManager) RunHTTPServer(router *gin.Engine, port string) error {
 }
 
 func (dm *DeviceManager) CreateDSP(addr string) *DSP {
-	if dsp, ok := dm.dspList.Load(addr); ok {
+	if dsp, ok := dm.DspList.Load(addr); ok {
 		return dsp.(*DSP)
 	}
 
 	dsp := newDSP(addr)
 
-	dm.dspList.Store(addr, dsp)
+	dm.DspList.Store(addr, dsp)
 	return dsp
 }
 

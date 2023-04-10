@@ -2,8 +2,10 @@ package main
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/byuoitav/qsc-control/device"
+	"github.com/gin-contrib/cors"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/pflag"
@@ -21,9 +23,12 @@ func main() {
 	manager := device.DeviceManager{
 		Log:      log,
 		LogLevel: logLvl,
+		DspList:  &sync.Map{},
 	}
 
 	router := gin.Default()
+
+	router.Use(cors.Default())
 
 	router.GET("/health", func(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, "healthy")

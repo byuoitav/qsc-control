@@ -17,9 +17,8 @@ import (
 
 func (dm *DeviceManager) HandlerGetInfo(ctx *gin.Context) {
 	addr := ctx.Param("address")
-	dsp := dm.CreateDSP(addr)
-
 	dm.Log.Debug("getting qsc hardware info", zap.String("address", addr))
+	dsp := dm.CreateDSP(addr)
 
 	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
 	defer cancel()
@@ -56,7 +55,7 @@ func (d *DSP) Info(ctx context.Context) (interface{}, error) {
 	var addr string
 	d.pool.Do(ctx, func(conn connpool.Conn) error {
 		addr = strings.Split(conn.RemoteAddr().String(), ":")[0]
-		return nil
+		return fmt.Errorf("provided address is in an invalid format")
 	})
 
 	// get the hostname
