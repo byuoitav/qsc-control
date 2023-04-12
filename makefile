@@ -104,11 +104,11 @@ else ifneq ($(shell echo $(TAG) | grep -E $(DEV_TAG_REGEX)),)
 else ifneq ($(shell echo $(TAG) | grep -E $(PRD_TAG_REGEX)),)
 	@echo Pushing prod container with tag $(TAG)
 
-	@echo Pushing container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-dev:$(TAG)
-	@docker push $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-dev:$(TAG)
+	@echo Pushing container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME):$(TAG)
+	@docker push $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME):$(TAG)
 
-	@echo Pushing container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm-dev:$(TAG)
-	@docker push $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm-dev:$(TAG)
+	@echo Pushing container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm:$(TAG)
+	@docker push $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm:$(TAG)
 
 endif
 
