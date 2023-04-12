@@ -55,9 +55,9 @@ func (dm *DeviceManager) HandlerSetVolume(ctx *gin.Context) {
 	name += "Gain"
 	dsp := dm.CreateDSP(addr)
 
-	vol, err := strconv.Atoi(ctx.Param("volume"))
+	vol, err := strconv.Atoi(ctx.Param("level"))
 	if err != nil {
-		ctx.String(http.StatusBadRequest, err.Error())
+		ctx.String(http.StatusBadRequest, "could not parse volume level")
 		return
 	}
 

@@ -56,26 +56,26 @@ ifeq ($(COMMIT_HASH),$(TAG))
 	@echo Building dev container with tag $(COMMIT_HASH)
 
 	@echo Building container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-dev:$(COMMIT_HASH)
-	@docker build -f dockerfile --build-arg NAME=$(NAME)-linux-amd64 -t $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-dev:$(COMMIT_HASH) dist
+	@docker buildx build -f dockerfile --build-arg NAME=$(NAME)-linux-amd64 -t $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-dev:$(COMMIT_HASH) dist
 
 	@echo Building container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm-dev:$(COMMIT_HASH)
-	@docker build -f dockerfile --build-arg NAME=$(NAME)-linux-arm -t $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm-dev:$(COMMIT_HASH) dist
-else ifneq ($(shell echo $(TAG) | egrep $(PRD_TAG_REGEX)),)
+	@docker buildx build -f dockerfile --build-arg NAME=$(NAME)-linux-arm -t $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm-dev:$(COMMIT_HASH) dist
+else ifneq ($(shell echo $(TAG) | grep -E $(PRD_TAG_REGEX)),)
 	@echo Building prod container with tag $(TAG)
 
 	@echo Building container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME):$(TAG)
-	@docker build -f dockerfile --build-arg NAME=$(NAME)-linux-amd64 -t $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME):$(TAG) dist
+	@docker buildx build -f dockerfile --build-arg NAME=$(NAME)-linux-amd64 -t $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME):$(TAG) dist
 
 	@echo Building container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm:$(TAG)
-	@docker build -f dockerfile --build-arg NAME=$(NAME)-linux-arm -t $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm:$(TAG) dist
-else ifneq ($(shell echo $(TAG) | egrep $(DEV_TAG_REGEX)),)
+	@docker buildx build -f dockerfile --build-arg NAME=$(NAME)-linux-arm -t $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm:$(TAG) dist
+else ifneq ($(shell echo $(TAG) | grep -E $(DEV_TAG_REGEX)),)
 	@echo Building dev container with tag $(TAG)
 
 	@echo Building container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-dev:$(TAG)
-	@docker build -f dockerfile --build-arg NAME=$(NAME)-linux-amd64 -t $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-dev:$(TAG) dist
+	@docker buildx build -f dockerfile --build-arg NAME=$(NAME)-linux-amd64 -t $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-dev:$(TAG) dist
 
 	@echo Building container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm-dev:$(TAG)
-	@docker build -f dockerfile --build-arg NAME=$(NAME)-linux-arm -t $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm-dev:$(TAG) dist
+	@docker buildx build -f dockerfile --build-arg NAME=$(NAME)-linux-arm -t $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm-dev:$(TAG) dist
 
 endif
 
@@ -92,7 +92,7 @@ ifeq ($(COMMIT_HASH),$(TAG))
 	@echo Pushing container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm-dev:$(COMMIT_HASH)
 	@docker push $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm-dev:$(COMMIT_HASH)
 
-else ifneq ($(shell echo $(TAG) | egrep $(DEV_TAG_REGEX)),)
+else ifneq ($(shell echo $(TAG) | grep -E $(DEV_TAG_REGEX)),)
 	@echo Pushing dev container with tag $(TAG)
 
 	@echo Pushing container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-dev:$(TAG)
@@ -101,7 +101,7 @@ else ifneq ($(shell echo $(TAG) | egrep $(DEV_TAG_REGEX)),)
 	@echo Pushing container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm-dev:$(TAG)
 	@docker push $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-arm-dev:$(TAG)
 
-else ifneq ($(shell echo $(TAG) | egrep $(PRD_TAG_REGEX)),)
+else ifneq ($(shell echo $(TAG) | grep -E $(PRD_TAG_REGEX)),)
 	@echo Pushing prod container with tag $(TAG)
 
 	@echo Pushing container $(DOCKER_URL)/$(OWNER)/$(REPO)/$(NAME)-dev:$(TAG)
