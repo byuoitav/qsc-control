@@ -33,6 +33,9 @@ func (dm *DeviceManager) RunHTTPServer(router *gin.Engine, port string) error {
 	dev.GET("/:address/generic/:name", dm.HandlerGetGeneric)
 	dev.GET("/:address/hardware", dm.HandlerGetInfo)
 
+	dev.GET("/:address/output/:output/input/:input", dm.HandlerSetInput) //change input
+	dev.GET("/:address/output/:output/input", dm.HandlerGetInput)        //get input
+
 	server := &http.Server{
 		Addr:           port,
 		MaxHeaderBytes: 1024 * 10,
