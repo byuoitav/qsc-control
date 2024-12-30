@@ -1,7 +1,10 @@
 package main
 
 import (
+	"log/slog"
 	"net/http"
+	"os"
+	"runtime"
 	"sync"
 
 	"github.com/byuoitav/qsc-control/device"
@@ -11,11 +14,27 @@ import (
 	"github.com/spf13/pflag"
 )
 
+var slogger *slog.Logger
+
 func main() {
 	var port, logLevel string
 	pflag.StringVarP(&port, "port", "p", "8016", "port on which to host the control service")
 	pflag.StringVarP(&logLevel, "log", "l", "Info", "initial log level")
 	pflag.Parse()
+
+	//setup logger
+	var slogLevel = new(slog.LevelVar)
+	slogger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slogLevel}))
+	slog.SetDefault(slogger)
+
+	// set log levels
+	slogLevel.Set(slog.LevelInfo)
+
+	if runtime.GOOS == "windows" {
+		logLevel = "debug"
+		slogLevel.Set(slog.LevelDebug)
+		slogger.Info("running from Windows, logging set to debug")
+	}
 
 	port = ":" + port
 
