@@ -43,12 +43,12 @@ func (dm *DeviceManager) HandlerSetInput(ctx *gin.Context) {
 
 	input := strconv.Itoa(newInput)
 
-	slog.Debug("parameters received:", "address", address, "component", component, "input", input)
+	slog.Info("parameters received:", "address", address, "component", component, "input", input)
 
 	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	err = dsp.SetInput(c, component, input)
+	err = dsp.setInput(c, component, input)
 	if err != nil {
 		slog.Error("unable to set input", "address", address, "component", component, "input", input, "error", err)
 		ctx.String(http.StatusInternalServerError, err.Error())
@@ -63,7 +63,7 @@ func (dm *DeviceManager) HandlerSetInput(ctx *gin.Context) {
 	slog.Debug("HandlerSetInput End")
 }
 
-func (d *DSP) SetInput(ctx context.Context, component string, input string) error {
+func (d *DSP) setInput(ctx context.Context, component string, input string) error {
 
 	req := d.GetComponentSetStatusRequest(ctx)
 
@@ -106,6 +106,10 @@ func (d *DSP) SetInput(ctx context.Context, component string, input string) erro
 			return fmt.Errorf("unable to read response: %w", err)
 		}
 
+		if strings.Contains(string(resp), "UnknownControls") || strings.Contains(string(resp), "error") {
+			return fmt.Errorf("error from Q-Sys DSP: %s", resp)
+		}
+
 		slog.Debug("Got response: ", "response", string(resp))
 
 		return nil
@@ -115,10 +119,6 @@ func (d *DSP) SetInput(ctx context.Context, component string, input string) erro
 	}
 	return nil
 }
-
-// ********************************************************************Working Here
-// ********************************************************************Working Here
-// ********************************************************************Working Here
 
 func (dm *DeviceManager) HandlerGetInput(ctx *gin.Context) {
 	var err error
@@ -138,7 +138,7 @@ func (dm *DeviceManager) HandlerGetInput(ctx *gin.Context) {
 	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	source, err := dsp.GetInput(c, component)
+	source, err := dsp.getInput(c, component)
 	if err != nil {
 		slog.Error("unable to get input", "address", address, "component", component, "error", err)
 		ctx.String(http.StatusInternalServerError, err.Error())
@@ -156,7 +156,7 @@ func (dm *DeviceManager) HandlerGetInput(ctx *gin.Context) {
 }
 
 // queries DSP and returns int representing the input for the selector that is a named component
-func (d *DSP) GetInput(ctx context.Context, component string) (input int, err error) {
+func (d *DSP) getInput(ctx context.Context, component string) (input int, err error) {
 
 	req := d.GetComponentGetStatusRequest(ctx)
 
@@ -185,9 +185,9 @@ func (d *DSP) GetInput(ctx context.Context, component string) (input int, err er
 		n, err := conn.Write(toSend)
 		switch {
 		case err != nil:
-			return fmt.Errorf("unable to write command to set input: %v", err)
+			return fmt.Errorf("unable to write command to getInput: %v", err)
 		case n != len(toSend):
-			return fmt.Errorf("unable to write command to set input: wrote %v/%v bytes", n, len(toSend))
+			return fmt.Errorf("unable to write command to getInput: wrote %v/%v bytes", n, len(toSend))
 		}
 
 		deadline, ok := ctx.Deadline()
@@ -197,7 +197,7 @@ func (d *DSP) GetInput(ctx context.Context, component string) (input int, err er
 
 		resp, err = conn.ReadUntil('\x00', deadline)
 		if err != nil {
-			return fmt.Errorf("unable to read response: %w", err)
+			return fmt.Errorf("unable to read response getInput: %w", err)
 		}
 
 		slog.Debug("Got response: ", "response", string(resp))
@@ -209,9 +209,9 @@ func (d *DSP) GetInput(ctx context.Context, component string) (input int, err er
 			return fmt.Errorf("unable to unmarshall\nresponse: %s, \nerror: %w", resp, err)
 		}
 
-		input, err = ParseInputResponse(respParsed)
+		input, err = parseInputResponse(respParsed)
 		if err != nil {
-			return fmt.Errorf("unable to ParseInputResponse\nresponse: %s, \nerror: %w", resp, err)
+			return fmt.Errorf("unable to parseInputResponse\nresponse: %s, \nerror: %w", resp, err)
 		}
 
 		return nil
@@ -222,7 +222,7 @@ func (d *DSP) GetInput(ctx context.Context, component string) (input int, err er
 	return input, nil
 }
 
-func ParseInputResponse(data QSCComponentGetStatusResponse) (input int, err error) {
+func parseInputResponse(data QSCComponentGetStatusResponse) (input int, err error) {
 	//setup default return data
 	err = fmt.Errorf("unable to determine input from response")
 	input = 0
@@ -247,277 +247,460 @@ func ParseInputResponse(data QSCComponentGetStatusResponse) (input int, err erro
 // name for the gain object so the pi system kjnows which object to automaticallt reference if not using the named controls
 // used with a DSP room type.  This will hopefully make using q-sys video easier in simple rooms by not requiring setting up
 // named controls in addition to the named component.
+// Volume sent from ther AV-API as 0-100 which needs to scale to a "normal" gain range for a Q-Sys Gain (-40 to 0)
 func (dm *DeviceManager) HandlerSetVideoVolume(ctx *gin.Context) {
 	slog.Debug("HandlerSetVideoVolume Start")
 
 	address := ctx.Param("address")
-	component := ctx.Param("component") + "_Gain"
+	component := ctx.Param("component")
 	level := ctx.Param("level")
+	dsp := dm.CreateDSP(address)
 
-	slog.Debug("parameters received:", "address", address, "component", component, "level", level)
+	// scale level for QSC
+	newLevel, err := strconv.Atoi(level)
+	if err != nil {
+		slog.Error("error converting input parameter to integer", "address", address, "component", component, "input", level)
+		ctx.String(http.StatusInternalServerError, err.Error())
+	}
+
+	if newLevel < 0 {
+		newLevel = 0
+		slog.Warn("error with input value, should be above 0", "address", address, "component", component, "input", level)
+	} else if newLevel > 100 {
+		newLevel = 100
+		slog.Warn("error with input value, should be at or below 100", "address", address, "component", component, "input", level)
+	}
+	scaledLevel := scaleVolume(newLevel)
+	slog.Info("parameters received:", "address", address, "component", component, "level", level, "scaledLevel", scaledLevel)
+
+	//QSC Communication
+	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	err = dsp.setVolume(c, component, scaledLevel)
+	if err != nil {
+		slog.Error("unable to set input", "address", address, "component", component, "level", level, "scaledLevel", scaledLevel, "error", err)
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+	slog.Debug("input set", "address", address, "component", component, "level", level, "scaledLevel", scaledLevel)
+
+	ctx.JSON(http.StatusOK, status.Input{
+		Input: strconv.Itoa(newLevel),
+	})
 
 	slog.Debug("HandlerSetVideoVolume End")
+}
+
+func (d *DSP) setVolume(ctx context.Context, component string, level string) error {
+
+	req := d.GetComponentSetStatusRequest(ctx)
+
+	req.Params.Name = component
+
+	var controls QSCComponentControlsSet
+	controls.Name = "gain"
+	controls.Value = level
+
+	req.Params.Controls = append(req.Params.Controls, controls)
+
+	toSend, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+
+	toSend = append(toSend, 0x00)
+
+	var resp []byte
+	err = d.pool.Do(ctx, func(conn connpool.Conn) error {
+		slog.Info("sending QRC command for", "component", req.Params.Name, "level", level, "error", err)
+
+		conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+
+		n, err := conn.Write(toSend)
+		switch {
+		case err != nil:
+			return fmt.Errorf("unable to write command to set input: %v", err)
+		case n != len(toSend):
+			return fmt.Errorf("unable to write command to set input: wrote %v/%v bytes", n, len(toSend))
+		}
+
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			return fmt.Errorf("no deadline set")
+		}
+
+		resp, err = conn.ReadUntil('\x00', deadline)
+		if err != nil {
+			return fmt.Errorf("unable to read response: %w", err)
+		}
+
+		if strings.Contains(string(resp), "UnknownControls") || strings.Contains(string(resp), "error") {
+			return fmt.Errorf("error from Q-Sys DSP: %s", resp)
+		}
+		slog.Debug("Got response: ", "response", string(resp))
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (dm *DeviceManager) HandlerGetVideoVolume(ctx *gin.Context) {
 	slog.Debug("HandlerGetVideoVolume Start")
 
 	address := ctx.Param("address")
-	component := ctx.Param("component") + "_Gain"
+	component := ctx.Param("component")
+	dsp := dm.CreateDSP(address)
+
+	if address == "" || component == "" {
+		slog.Error("invalid address or component", "address", address, "component", component)
+		return
+	}
 
 	slog.Debug("parameters received:", "address", address, "component", component)
+
+	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	volume, err := dsp.getVolume(c, component)
+	if err != nil {
+		slog.Error("unable to get input", "address", address, "component", component, "error", err)
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	slog.Debug("input set", "address", address, "component", component, "volume", volume)
+
+	ctx.JSON(http.StatusOK, status.Volume{
+		Volume: volume,
+	})
 
 	slog.Debug("HandlerGetVideoVolume End")
 }
 
+// queries DSP and returns int representing the input for the selector that is a named component
+// format of query: {"jsonrpc": "2.0","id": 1234,"method": "Component.GetControls","params": {"Name": "VideoZone1"}}$00
+func (d *DSP) getVolume(ctx context.Context, component string) (volume int, err error) {
+
+	req := d.GetComponentGetStatusRequest(ctx)
+
+	req.Params.Name = component
+
+	toSend, err := json.Marshal(req)
+	if err != nil {
+		return
+	}
+
+	toSend = append(toSend, 0x00)
+
+	var resp []byte
+	var respParsed QSCComponentGetStatusResponse
+	err = d.pool.Do(ctx, func(conn connpool.Conn) error {
+		slog.Info("sending QRC command for", "component", component, "error", err)
+
+		conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+
+		n, err := conn.Write(toSend)
+		switch {
+		case err != nil:
+			return fmt.Errorf("unable to write command to getVolume: %v", err)
+		case n != len(toSend):
+			return fmt.Errorf("unable to write command to getVolume: wrote %v/%v bytes", n, len(toSend))
+		}
+
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			return fmt.Errorf("no deadline set")
+		}
+
+		resp, err = conn.ReadUntil('\x00', deadline)
+		if err != nil {
+			return fmt.Errorf("unable to read response getVolume: %w", err)
+		}
+
+		slog.Debug("Got response: ", "response", string(resp))
+
+		//remove the null termination from the QSC response before unmarshalling
+		resp := strings.TrimRight(string(resp), "\x00")
+		err = json.Unmarshal([]byte(resp), &respParsed)
+		if err != nil {
+			return fmt.Errorf("unable to unmarshall\nresponse: %s, \nerror: %w", resp, err)
+		}
+
+		gainIndex := 0
+		found := false
+		for i := range respParsed.Result.Controls {
+			if respParsed.Result.Controls[i].Name == "gain" {
+				gainIndex = i
+				found = true
+			}
+		}
+		if found == false {
+			return fmt.Errorf("gain not found in response\nresponse: %s", resp)
+		}
+
+		slog.Debug("Got value: ", "value", respParsed.Result.Controls[gainIndex].Value)
+
+		volConv, ok := respParsed.Result.Controls[gainIndex].Value.(float64)
+		if ok {
+			slog.Debug("successfully converted gain value to int")
+			volume = int(volConv)
+		} else {
+			slog.Error("error converting gain value to int")
+		}
+
+		return nil
+	})
+	if err != nil {
+		return
+	}
+
+	volume = scaleReceiveVolume(volume)
+	return volume, nil
+}
+
+func scaleVolume(volume int) string {
+	v := float64(volume) //make a float64 for accuracy otherwise 50 returns 49
+	if v > 100 {
+		v = 100
+	}
+	if v < 1 {
+		v = 0
+	}
+	outMax := 100.0
+	outMin := 0.0
+	devHi := 0.0
+	devLo := -40.0
+	mutedLevel := -100.0
+
+	vol := ((devHi-devLo)*(v-outMin))/(outMax-outMin) + devLo
+	if v < 1 {
+		vol = mutedLevel
+	}
+
+	volToSend := int(vol)
+	return fmt.Sprint(volToSend)
+}
+
+func scaleReceiveVolume(vtmp int) (volToSend int) {
+	// //vtmp, err := strconv.Atoi(volume)
+	// if err != nil {
+	// 	return "0"
+	// }
+	v := float64(vtmp) //make a float64 for accuracy otherwise 50 returns 49
+
+	outMax := 100.0
+	outMin := 0.0
+	devHi := 0.0
+	devLo := -40.0
+
+	if v < devLo {
+		volToSend = int(outMin)
+		return
+	}
+
+	vol := ((outMax-outMin)*(v-devLo))/(devHi-devLo) + outMin
+	volToSend = int(vol)
+	if volToSend > 100 {
+		volToSend = 100
+	}
+	if volToSend < 1 {
+		volToSend = 0
+	}
+	return
+}
+
 // ----------------------------------------------------------------------------------Mute---------------------------------
+// Handler to set the mute status for the video component
 func (dm *DeviceManager) HandlerSetVideoMute(ctx *gin.Context) {
 	slog.Debug("HandlerSetVideoMute Start")
 
-	address := ctx.Param("address") //device/DSP address
-	component := ctx.Param("component") + "_Gain"
-	mute := ctx.Param("mute") //boolean
+	address := ctx.Param("address")               // Device/DSP address
+	component := ctx.Param("component") + "_Gain" // Add suffix '_Gain' for the component
+	mute := ctx.Param("mute")                     // Mute boolean parameter (should be "true" or "false")
 
-	slog.Debug("parameters received:", "address", address, "component", component, "mute", mute)
+	// Parse the mute parameter into a boolean
+	muteStatus, err := strconv.ParseBool(mute)
+	if err != nil {
+		slog.Error("error converting mute parameter to boolean", "address", address, "component", component, "mute", mute)
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Communicate with the DSP to set the mute status
+	dsp := dm.CreateDSP(address)
+
+	slog.Info("parameters received:", "address", address, "component", component, "mute", muteStatus)
+
+	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	err = dsp.setMute(c, component, muteStatus)
+	if err != nil {
+		slog.Error("unable to set mute", "address", address, "component", component, "mute", muteStatus, "error", err)
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	slog.Debug("mute set", "address", address, "component", component, "mute", muteStatus)
+
+	ctx.JSON(http.StatusOK, status.Mute{
+		Muted: muteStatus,
+	})
 
 	slog.Debug("HandlerSetVideoMute End")
 }
 
+// DSP method to set the mute status for a component
+func (d *DSP) setMute(ctx context.Context, component string, mute bool) error {
+	req := d.GetComponentSetStatusRequest(ctx)
+
+	req.Params.Name = component
+
+	var controls QSCComponentControlsSet
+	controls.Name = "mute" // Set the name to "mute"
+	controls.Value = mute  // Set the mute value (true or false)
+
+	req.Params.Controls = append(req.Params.Controls, controls)
+
+	toSend, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+
+	toSend = append(toSend, 0x00)
+
+	var resp []byte
+	err = d.pool.Do(ctx, func(conn connpool.Conn) error {
+		slog.Info("sending QRC command for", "component", req.Params.Name, "mute", mute, "error", err)
+
+		conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+
+		n, err := conn.Write(toSend)
+		switch {
+		case err != nil:
+			return fmt.Errorf("unable to write command to set mute: %v", err)
+		case n != len(toSend):
+			return fmt.Errorf("unable to write command to set mute: wrote %v/%v bytes", n, len(toSend))
+		}
+
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			return fmt.Errorf("no deadline set")
+		}
+
+		resp, err = conn.ReadUntil('\x00', deadline)
+		if err != nil {
+			return fmt.Errorf("unable to read response: %w", err)
+		}
+
+		if strings.Contains(string(resp), "UnknownControls") || strings.Contains(string(resp), "error") {
+			return fmt.Errorf("error from Q-Sys DSP: %s", resp)
+		}
+		slog.Debug("Got response: ", "response", string(resp))
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Handler to get the current mute status for the video component
 func (dm *DeviceManager) HandlerGetVideoMute(ctx *gin.Context) {
 	slog.Debug("HandlerGetVideoMute Start")
 
 	address := ctx.Param("address")
-	component := ctx.Param("component") + "_Gain"
+	component := ctx.Param("component") + "_Gain" // Add suffix '_Gain' for the component
+
+	// Query the DSP for the current mute status
+	dsp := dm.CreateDSP(address)
 
 	slog.Debug("parameters received:", "address", address, "component", component)
+
+	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	muteStatus, err := dsp.getMute(c, component)
+	if err != nil {
+		slog.Error("unable to get mute", "address", address, "component", component, "error", err)
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	slog.Debug("current mute status", "address", address, "component", component, "mute", muteStatus)
+
+	ctx.JSON(http.StatusOK, status.Mute{
+		Muted: muteStatus,
+	})
 
 	slog.Debug("HandlerGetVideoMute End")
 }
 
-//get component info command
-// {"jsonrpc": "2.0","id": 1234,"method": "Component.GetControls","params": {"Name": "VideoZone1"}}$00
-//response:
+// DSP method to get the current mute status for a component
+func (d *DSP) getMute(ctx context.Context, component string) (mute bool, err error) {
+	req := d.GetComponentGetStatusRequest(ctx)
 
-// {
-//     "jsonrpc": "2.0",
-//     "result": {
-//         "Name": "VideoZone1",
-//         "Controls": [
-//             {
-//                 "Name": "label.0",
-//                 "Type": "Text",
-//                 "String": "Selection 1",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "label.1",
-//                 "Type": "Text",
-//                 "String": "Selection 2",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "label.2",
-//                 "Type": "Text",
-//                 "String": "Selection 3",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "label.3",
-//                 "Type": "Text",
-//                 "String": "Selection 4",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "label.4",
-//                 "Type": "Text",
-//                 "String": "Selection 5",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "label.5",
-//                 "Type": "Text",
-//                 "String": "Selection 6",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "label.6",
-//                 "Type": "Text",
-//                 "String": "Selection 7",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "label.7",
-//                 "Type": "Text",
-//                 "String": "Selection 8",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "label.8",
-//                 "Type": "Text",
-//                 "String": "Selection 9",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "label.9",
-//                 "Type": "Text",
-//                 "String": "Selection 10",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "selector",
-//                 "Type": "Text",
-//                 "String": "{\"Text\":\"Selection 5\",\"TextColor\":\"\",\"Icon\":\"\",\"IconColor\":\"\",\"Data\":\"Value 5\",\"Index\":4}",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "selector.0",
-//                 "Type": "Boolean",
-//                 "Value": false,
-//                 "String": "false",
-//                 "Position": 0.0,
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "selector.1",
-//                 "Type": "Boolean",
-//                 "Value": false,
-//                 "String": "false",
-//                 "Position": 0.0,
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "selector.2",
-//                 "Type": "Boolean",
-//                 "Value": false,
-//                 "String": "false",
-//                 "Position": 0.0,
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "selector.3",
-//                 "Type": "Boolean",
-//                 "Value": false,
-//                 "String": "false",
-//                 "Position": 0.0,
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "selector.4",
-//                 "Type": "Boolean",
-//                 "Value": true,
-//                 "String": "true",
-//                 "Position": 1.0,
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "selector.5",
-//                 "Type": "Boolean",
-//                 "Value": false,
-//                 "String": "false",
-//                 "Position": 0.0,
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "selector.6",
-//                 "Type": "Boolean",
-//                 "Value": false,
-//                 "String": "false",
-//                 "Position": 0.0,
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "selector.7",
-//                 "Type": "Boolean",
-//                 "Value": false,
-//                 "String": "false",
-//                 "Position": 0.0,
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "selector.8",
-//                 "Type": "Boolean",
-//                 "Value": false,
-//                 "String": "false",
-//                 "Position": 0.0,
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "selector.9",
-//                 "Type": "Boolean",
-//                 "Value": false,
-//                 "String": "false",
-//                 "Position": 0.0,
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "value",
-//                 "Type": "Text",
-//                 "String": "Value 5",
-//                 "Direction": "Read Only"
-//             },
-//             {
-//                 "Name": "value.0",
-//                 "Type": "Text",
-//                 "String": "Value 1",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "value.1",
-//                 "Type": "Text",
-//                 "String": "Value 2",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "value.2",
-//                 "Type": "Text",
-//                 "String": "Value 3",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "value.3",
-//                 "Type": "Text",
-//                 "String": "Value 4",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "value.4",
-//                 "Type": "Text",
-//                 "String": "Value 5",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "value.5",
-//                 "Type": "Text",
-//                 "String": "Value 6",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "value.6",
-//                 "Type": "Text",
-//                 "String": "Value 7",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "value.7",
-//                 "Type": "Text",
-//                 "String": "Value 8",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "value.8",
-//                 "Type": "Text",
-//                 "String": "Value 9",
-//                 "Direction": "Read/Write"
-//             },
-//             {
-//                 "Name": "value.9",
-//                 "Type": "Text",
-//                 "String": "Value 10",
-//                 "Direction": "Read/Write"
-//             }
-//         ]
-//     },
-//     "id": 1234
-// }{
-//     00
-// }
+	req.Params.Name = component
+
+	toSend, err := json.Marshal(req)
+	if err != nil {
+		return false, err
+	}
+
+	toSend = append(toSend, 0x00)
+
+	var resp []byte
+	var respParsed QSCComponentGetStatusResponse
+	err = d.pool.Do(ctx, func(conn connpool.Conn) error {
+		slog.Info("sending QRC command for", "component", component, "error", err)
+
+		conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+
+		n, err := conn.Write(toSend)
+		switch {
+		case err != nil:
+			return fmt.Errorf("unable to write command to getMute: %v", err)
+		case n != len(toSend):
+			return fmt.Errorf("unable to write command to getMute: wrote %v/%v bytes", n, len(toSend))
+		}
+
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			return fmt.Errorf("no deadline set")
+		}
+
+		resp, err = conn.ReadUntil('\x00', deadline)
+		if err != nil {
+			return fmt.Errorf("unable to read response getMute: %w", err)
+		}
+
+		slog.Debug("Got response: ", "response", string(resp))
+
+		// Remove the null termination from the QSC response before unmarshalling
+		resp := strings.TrimRight(string(resp), "\x00")
+		err = json.Unmarshal([]byte(resp), &respParsed)
+		if err != nil {
+			return fmt.Errorf("unable to unmarshall\nresponse: %s, \nerror: %w", resp, err)
+		}
+
+		// Extract mute status from the response
+		for _, control := range respParsed.Result.Controls {
+			if control.Name == "mute" {
+				mute, _ = control.Value.(bool)
+				return nil
+			}
+		}
+
+		return fmt.Errorf("mute not found in response\nresponse: %s", resp)
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return mute, nil
+}

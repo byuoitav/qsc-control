@@ -32,6 +32,7 @@ func (dm *DeviceManager) RunHTTPServer(router *gin.Engine, port string) error {
 	dev.PUT("/:address/generic/:name/:value", dm.HandlerSetGeneric)
 	dev.GET("/:address/generic/:name", dm.HandlerGetGeneric)
 	dev.GET("/:address/hardware", dm.HandlerGetInfo)
+	dev.GET("/:address/getHealth", dm.HandlerGetHealth)
 
 	video := router.Group("/api/v1/video")
 	video.GET("/:address/component/:component/input/:input", dm.HandlerSetInput) //change input
@@ -42,10 +43,11 @@ func (dm *DeviceManager) RunHTTPServer(router *gin.Engine, port string) error {
 
 	video.GET("/:address/component/:component/mute/:mute", dm.HandlerSetVideoMute) //set mute true/false
 	video.GET("/:address/component/:component/muted", dm.HandlerGetVideoMute)      //get mute state
+	video.GET("/:address/getHealth", dm.HandlerGetHealth)
 
 	server := &http.Server{
-		Addr:           port,
-		MaxHeaderBytes: 1024 * 10,
+		Addr: port,
+		//MaxHeaderBytes: 1024 * 10,
 	}
 
 	dm.Log.Info("running http server", zap.String("port", port))
@@ -234,7 +236,7 @@ type QSCComponentSetStatusParams struct {
 // QSCComponentControlsSet is the control paramaters needed to set a control on a selector named component
 type QSCComponentControlsSet struct {
 	Name  string
-	Value bool
+	Value interface{}
 }
 
 // QSCSetStatusParams is the parameters for the Component.GetControls method
@@ -260,12 +262,12 @@ type QSCComponentGetStatusResponseResult struct {
 }
 
 type QSCComponentGetStatusResponseControls struct {
-	Name      string  `json:"Name"`
-	String    string  `json:"String"`
-	Type      string  `json:"Type"`
-	Direction string  `json:"Direction"`
-	Position  float32 `json:"Position,omitempty"`
-	Value     bool    `json:"Value,omitempty"`
+	Name      string      `json:"Name"`
+	String    string      `json:"String"`
+	Type      string      `json:"Type"`
+	Direction string      `json:"Direction"`
+	Position  float32     `json:"Position,omitempty"`
+	Value     interface{} `json:"Value,omitempty"`
 }
 
 func (d *DSP) GetComponentSetStatusRequest(ctx context.Context) QSCComponentSetStatusRequest {
