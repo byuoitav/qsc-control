@@ -32,7 +32,7 @@ func (dm *DeviceManager) RunHTTPServer(router *gin.Engine, port string) error {
 	dev.PUT("/:address/generic/:name/:value", dm.HandlerSetGeneric)
 	dev.GET("/:address/generic/:name", dm.HandlerGetGeneric)
 	dev.GET("/:address/hardware", dm.HandlerGetInfo)
-	dev.GET("/:address/getHealth", dm.HandlerGetHealth)
+	dev.GET("/:address/health", dm.HandlerGetHealth)
 
 	video := router.Group("/api/v1/video")
 	video.GET("/:address/component/:component/input/:input", dm.HandlerSetInput) //change input
@@ -43,7 +43,7 @@ func (dm *DeviceManager) RunHTTPServer(router *gin.Engine, port string) error {
 
 	video.GET("/:address/component/:component/mute/:mute", dm.HandlerSetVideoMute) //set mute true/false
 	video.GET("/:address/component/:component/muted", dm.HandlerGetVideoMute)      //get mute state
-	video.GET("/:address/getHealth", dm.HandlerGetHealth)
+	video.GET("/:address/health", dm.HandlerGetHealth)
 
 	server := &http.Server{
 		Addr: port,

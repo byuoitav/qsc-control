@@ -4,7 +4,7 @@ $COMMAND = $args[0]
 $NAME = "qsc-control"
 $OWNER = "byuoitav"
 $PKG = "github.com/$OWNER/$NAME"
-$DOCKER_URL = "docker.pkg.github.com"
+$DOCKER_URL = "ghcr.io"
 $DOCKER_PKG = "$DOCKER_URL/$OWNER/$NAME"
 
 Write-Output "PKG: $PKG"
@@ -77,6 +77,8 @@ function Build {
     Invoke-Expression "go build -o ../dist/$NAME-linux-arm"
 
     Write-Output "Build output is located in ./dist/."
+    Set-Item -Path env:GOOS -Value "windows"
+    Set-Item -Path env:GOARCH -Value "amd64"
     Set-Location ".."
 }
 
@@ -95,16 +97,16 @@ function DockerFunc {
     Write-Output "Building Docker images for Commit Hash: $COMMIT_HASH, Tag: $TAG"
     if ($COMMIT_HASH -eq $TAG) {
         Write-Output "Building dev containers with tag $COMMIT_HASH"
-        Invoke-Expression "docker buildx build -f .\dockerfile --build-arg NAME=$NAME-linux-amd64 -t $DOCKER_PKG/$NAME-dev:$COMMIT_HASH dist"
-        Invoke-Expression "docker buildx build -f .\dockerfile --build-arg NAME=$NAME-linux-arm -t $DOCKER_PKG/$NAME-arm-dev:$COMMIT_HASH dist"
+        Invoke-Expression "docker buildx build -f .\dockerfile --platform linux/arm/v7  --build-arg NAME=$NAME-linux-amd64 -t $DOCKER_PKG/$NAME-dev:$COMMIT_HASH dist"
+        Invoke-Expression "docker buildx build -f .\dockerfile --platform linux/arm/v7  --build-arg NAME=$NAME-linux-arm -t $DOCKER_PKG/$NAME-arm-dev:$COMMIT_HASH dist"
     } elseif ($TAG -match $DEV_TAG_REGEX) {
         Write-Output "Building dev containers with tag $TAG"
-        Invoke-Expression "docker buildx build -f .\dockerfile --build-arg NAME=$NAME-linux-amd64 -t $DOCKER_PKG/$NAME-dev:$TAG dist"
-        Invoke-Expression "docker buildx build -f .\dockerfile --build-arg NAME=$NAME-linux-arm -t $DOCKER_PKG/$NAME-arm-dev:$TAG dist"
+        Invoke-Expression "docker buildx build -f .\dockerfile --platform linux/arm/v7  --build-arg NAME=$NAME-linux-amd64 -t $DOCKER_PKG/$NAME-dev:$TAG dist"
+        Invoke-Expression "docker buildx build -f .\dockerfile --platform linux/arm/v7  --build-arg NAME=$NAME-linux-arm -t $DOCKER_PKG/$NAME-arm-dev:$TAG dist"
     } elseif ($TAG -match $PRD_TAG_REGEX) {
         Write-Output "Building prod containers with tag $TAG"
-        Invoke-Expression "docker buildx build -f .\dockerfile --build-arg NAME=$NAME-linux-amd64 -t $DOCKER_PKG/${NAME}:$TAG dist"
-        Invoke-Expression "docker buildx build -f .\dockerfile --build-arg NAME=$NAME-linux-arm -t $DOCKER_PKG/$NAME-arm:$TAG dist"
+        Invoke-Expression "docker buildx build -f .\dockerfile --platform linux/arm/v7  --build-arg NAME=$NAME-linux-amd64 -t $DOCKER_PKG/${NAME}:$TAG dist"
+        Invoke-Expression "docker buildx build -f .\dockerfile --platform linux/arm/v7  --build-arg NAME=$NAME-linux-arm -t $DOCKER_PKG/$NAME-arm:$TAG dist"
     } else {
         Write-Output "Unexpected state. Commit Hash: $COMMIT_HASH, Tag: $TAG"
     }

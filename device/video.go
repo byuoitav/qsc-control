@@ -57,7 +57,7 @@ func (dm *DeviceManager) HandlerSetInput(ctx *gin.Context) {
 	slog.Debug("input set", "address", address, "component", component, "input", input)
 
 	ctx.JSON(http.StatusOK, status.Input{
-		Input: origInput,
+		Input: origInput + ":" + component,
 	})
 
 	slog.Debug("HandlerSetInput End")
@@ -149,7 +149,7 @@ func (dm *DeviceManager) HandlerGetInput(ctx *gin.Context) {
 	slog.Debug("input set", "address", address, "component", component, "input", sourceString)
 
 	ctx.JSON(http.StatusOK, status.Input{
-		Input: sourceString,
+		Input: sourceString + ":" + component,
 	})
 
 	slog.Debug("HandlerGetInput End")
@@ -296,7 +296,11 @@ func (d *DSP) setVolume(ctx context.Context, component string, level string) err
 
 	req := d.GetComponentSetStatusRequest(ctx)
 
-	req.Params.Name = component
+	if strings.Contains(component, "_Gain") {
+		req.Params.Name = component
+	} else {
+		req.Params.Name = component + "_Gain"
+	}
 
 	var controls QSCComponentControlsSet
 	controls.Name = "gain"
@@ -387,7 +391,11 @@ func (d *DSP) getVolume(ctx context.Context, component string) (volume int, err 
 
 	req := d.GetComponentGetStatusRequest(ctx)
 
-	req.Params.Name = component
+	if strings.Contains(component, "_Gain") {
+		req.Params.Name = component
+	} else {
+		req.Params.Name = component + "_Gain"
+	}
 
 	toSend, err := json.Marshal(req)
 	if err != nil {
@@ -518,9 +526,9 @@ func scaleReceiveVolume(vtmp int) (volToSend int) {
 func (dm *DeviceManager) HandlerSetVideoMute(ctx *gin.Context) {
 	slog.Debug("HandlerSetVideoMute Start")
 
-	address := ctx.Param("address")               // Device/DSP address
-	component := ctx.Param("component") + "_Gain" // Add suffix '_Gain' for the component
-	mute := ctx.Param("mute")                     // Mute boolean parameter (should be "true" or "false")
+	address := ctx.Param("address")     // Device/DSP address
+	component := ctx.Param("component") // Device/component name
+	mute := ctx.Param("mute")           // Mute boolean parameter (should be "true" or "false")
 
 	// Parse the mute parameter into a boolean
 	muteStatus, err := strconv.ParseBool(mute)
@@ -558,7 +566,11 @@ func (dm *DeviceManager) HandlerSetVideoMute(ctx *gin.Context) {
 func (d *DSP) setMute(ctx context.Context, component string, mute bool) error {
 	req := d.GetComponentSetStatusRequest(ctx)
 
-	req.Params.Name = component
+	if strings.Contains(component, "_Gain") {
+		req.Params.Name = component
+	} else {
+		req.Params.Name = component + "_Gain"
+	}
 
 	var controls QSCComponentControlsSet
 	controls.Name = "mute" // Set the name to "mute"
@@ -615,7 +627,7 @@ func (dm *DeviceManager) HandlerGetVideoMute(ctx *gin.Context) {
 	slog.Debug("HandlerGetVideoMute Start")
 
 	address := ctx.Param("address")
-	component := ctx.Param("component") + "_Gain" // Add suffix '_Gain' for the component
+	component := ctx.Param("component")
 
 	// Query the DSP for the current mute status
 	dsp := dm.CreateDSP(address)
@@ -645,7 +657,11 @@ func (dm *DeviceManager) HandlerGetVideoMute(ctx *gin.Context) {
 func (d *DSP) getMute(ctx context.Context, component string) (mute bool, err error) {
 	req := d.GetComponentGetStatusRequest(ctx)
 
-	req.Params.Name = component
+	if strings.Contains(component, "_Gain") {
+		req.Params.Name = component
+	} else {
+		req.Params.Name = component + "_Gain"
+	}
 
 	toSend, err := json.Marshal(req)
 	if err != nil {
