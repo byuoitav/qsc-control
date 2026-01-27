@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -34,6 +35,28 @@ func (dm *DeviceManager) HandlerGetInfo(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, map[string]interface{}{
 		"Info": info,
+	})
+}
+
+func (dm *DeviceManager) HandlerGetHealth(ctx *gin.Context) {
+	addr := ctx.Param("address")
+	dm.Log.Debug("getting qsc health status", zap.String("address", addr))
+	dsp := dm.CreateDSP(addr)
+
+	c, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	err := dsp.Healthy(c)
+	if err != nil {
+		dm.Log.Error("unable to get health status", zap.String("address", addr), zap.Error(err))
+		ctx.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	dm.Log.Debug("Got health status", zap.String("address", addr))
+
+	ctx.JSON(http.StatusOK, map[string]interface{}{
+		"healthy": true,
 	})
 }
 
@@ -98,7 +121,7 @@ func (d *DSP) Healthy(ctx context.Context) error {
 func (d *DSP) GetStatus(ctx context.Context) (QSCStatusGetResponse, error) {
 	req := d.GetGenericStatusGetRequest(ctx)
 
-	d.log.Info("In GetStatus...")
+	slog.Info("In GetStatus...")
 	toReturn := QSCStatusGetResponse{}
 
 	toSend, err := json.Marshal(req)
@@ -110,7 +133,7 @@ func (d *DSP) GetStatus(ctx context.Context) (QSCStatusGetResponse, error) {
 
 	var resp []byte
 	err = d.pool.Do(ctx, func(conn connpool.Conn) error {
-		d.log.Info("getting status")
+		slog.Info("getting status")
 
 		conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 
@@ -132,7 +155,7 @@ func (d *DSP) GetStatus(ctx context.Context) (QSCStatusGetResponse, error) {
 			return fmt.Errorf("unable to read response: %w", err)
 		}
 
-		d.log.Debug("Got response: %v", zap.Any("response", resp))
+		slog.Debug("Got response:", "response", string(resp))
 
 		return nil
 	})
@@ -144,7 +167,7 @@ func (d *DSP) GetStatus(ctx context.Context) (QSCStatusGetResponse, error) {
 
 	err = json.Unmarshal(resp, &toReturn)
 	if err != nil {
-		d.log.Info(err.Error())
+		slog.Info(err.Error())
 	}
 
 	return toReturn, err

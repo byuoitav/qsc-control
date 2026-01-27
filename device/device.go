@@ -32,10 +32,22 @@ func (dm *DeviceManager) RunHTTPServer(router *gin.Engine, port string) error {
 	dev.PUT("/:address/generic/:name/:value", dm.HandlerSetGeneric)
 	dev.GET("/:address/generic/:name", dm.HandlerGetGeneric)
 	dev.GET("/:address/hardware", dm.HandlerGetInfo)
+	dev.GET("/:address/health", dm.HandlerGetHealth)
+
+	video := router.Group("/api/v1/video")
+	video.GET("/:address/component/:component/input/:input", dm.HandlerSetInput) //change input
+	video.GET("/:address/component/:component/input", dm.HandlerGetInput)        //get input
+
+	video.GET("/:address/component/:component/volume/:level", dm.HandlerSetVideoVolume) //set volume
+	video.GET("/:address/component/:component/volume", dm.HandlerGetVideoVolume)        //get volume
+
+	video.GET("/:address/component/:component/mute/:mute", dm.HandlerSetVideoMute) //set mute true/false
+	video.GET("/:address/component/:component/muted", dm.HandlerGetVideoMute)      //get mute state
+	video.GET("/:address/health", dm.HandlerGetHealth)
 
 	server := &http.Server{
-		Addr:           port,
-		MaxHeaderBytes: 1024 * 10,
+		Addr: port,
+		//MaxHeaderBytes: 1024 * 10,
 	}
 
 	dm.Log.Info("running http server", zap.String("port", port))
@@ -58,7 +70,7 @@ type DSP struct {
 	log  *zap.Logger
 }
 
-const _kTimeoutInSeconds = 2.0
+//const _kTimeoutInSeconds = 2.0
 
 func newDSP(addr string, opts ...Option) *DSP {
 	options := options{
@@ -205,4 +217,63 @@ func (d *DSP) GetGenericGetStatusRequest(ctx context.Context) QSCGetStatusReques
 // GetGenericStatusGetRequest is used for retreiving EngineStatus and other information about the QSC
 func (d *DSP) GetGenericStatusGetRequest(ctx context.Context) QSCStatusGetRequest {
 	return QSCStatusGetRequest{BaseRequest: BaseRequest{JSONRPC: "2.0", ID: 1, Method: "StatusGet"}, Params: 0}
+}
+
+//*************************************Video / Named Component Additions***************************************
+
+// Component structs
+type QSCComponentSetStatusRequest struct {
+	BaseRequest
+	Params QSCComponentSetStatusParams `json:"params"`
+}
+
+// QSCSetStatusParams is the parameters for the Component.Set method
+type QSCComponentSetStatusParams struct {
+	Name     string
+	Controls []QSCComponentControlsSet
+}
+
+// QSCComponentControlsSet is the control paramaters needed to set a control on a selector named component
+type QSCComponentControlsSet struct {
+	Name  string
+	Value interface{}
+}
+
+// QSCSetStatusParams is the parameters for the Component.GetControls method
+type QSCComponentGetStatusRequest struct {
+	BaseRequest
+	Params QSCComponentGetStatusParams `json:"params"`
+}
+
+// QSCSetStatusParams is the parameters for the Control.Set method
+type QSCComponentGetStatusParams struct {
+	Name string
+}
+
+// QSCComponentGetStatusResponse is the response for the entire component controls from the Component.GetControls method
+type QSCComponentGetStatusResponse struct {
+	BaseRequest
+	Result QSCComponentGetStatusResponseResult `json:"result"`
+}
+
+type QSCComponentGetStatusResponseResult struct {
+	Name     string
+	Controls []QSCComponentGetStatusResponseControls
+}
+
+type QSCComponentGetStatusResponseControls struct {
+	Name      string      `json:"Name"`
+	String    string      `json:"String"`
+	Type      string      `json:"Type"`
+	Direction string      `json:"Direction"`
+	Position  float32     `json:"Position,omitempty"`
+	Value     interface{} `json:"Value,omitempty"`
+}
+
+func (d *DSP) GetComponentSetStatusRequest(ctx context.Context) QSCComponentSetStatusRequest {
+	return QSCComponentSetStatusRequest{BaseRequest: BaseRequest{JSONRPC: "2.0", ID: 1234, Method: "Component.Set"}, Params: QSCComponentSetStatusParams{}}
+}
+
+func (d *DSP) GetComponentGetStatusRequest(ctx context.Context) QSCComponentGetStatusRequest {
+	return QSCComponentGetStatusRequest{BaseRequest: BaseRequest{JSONRPC: "2.0", ID: 1234, Method: "Component.GetControls"}, Params: QSCComponentGetStatusParams{}}
 }
